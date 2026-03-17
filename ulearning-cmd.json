@@ -1,0 +1,13 @@
+{
+  "users": {
+    "2021123456789": {
+      "password": "password",
+      "auth": "E9338EDB8B33B6E2E470157D83BE4DA9",
+      "userID": 12461656,
+      "roleId": 9,
+      "deviceInfo": " ulearning-cmd ",
+      "terminalId": "0123456789abcdef"
+    }
+  },
+  "activeUser": "dgut2021123456789"
+}
