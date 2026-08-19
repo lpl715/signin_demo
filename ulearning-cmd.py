@@ -12,6 +12,7 @@ import copy
 from concurrent.futures import ThreadPoolExecutor
 
 
+# PyInstaller 单文件模式下 __file__ 位于临时目录，配置应保存在 EXE 同目录。
 APP_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
 CONFIG_PATH = os.path.join(APP_DIR, 'ulearning-cmd.json')
 
@@ -94,6 +95,7 @@ def setActiveUser(username):
 
 
 def saveCfgFile(active_user):
+    """保存全部账号，并记录下次启动默认选中的账号。"""
     cfg = {
         'users': users,
         'activeUser': active_user,
@@ -103,6 +105,7 @@ def saveCfgFile(active_user):
 
 
 def chooseUser(username=None):
+    """从已有账号中切换，或收集一个新账号的登录信息。"""
     if username:
         if setActiveUser(username) == 1:
             return
