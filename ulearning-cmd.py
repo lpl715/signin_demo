@@ -1,6 +1,8 @@
 import sys
+import os
 import requests
 import json
+from getpass import getpass
 from time import sleep
 from time import time
 from http.cookies import SimpleCookie
@@ -8,6 +10,10 @@ from urllib.parse import unquote
 import traceback
 import copy
 from concurrent.futures import ThreadPoolExecutor
+
+
+APP_DIR = os.path.dirname(sys.executable) if getattr(sys, 'frozen', False) else os.path.dirname(os.path.abspath(__file__))
+CONFIG_PATH = os.path.join(APP_DIR, 'ulearning-cmd.json')
 
 
 def printObj(obj):
@@ -31,7 +37,7 @@ def makeHeadersFromTxt(txt):
 
 def loadCfg():
     try:
-        with open('ulearning-cmd.json') as f:
+        with open(CONFIG_PATH, encoding='utf-8') as f:
             cfg = json.load(f)
 
         global users
@@ -43,20 +49,30 @@ def loadCfg():
         else:
             users[cfg['username']] = {}
             users[cfg['username']]['password'] = cfg.get('password')
-            users[cfg['username']]['headers'] = cfg.get('auth', '')
+            users[cfg['username']]['auth'] = cfg.get('auth', '')
             users[cfg['username']]['userID'] = cfg.get('userID', 0)
             users[cfg['username']]['roleId'] = cfg.get('roleId', 0)
             users[cfg['username']]['deviceInfo'] = cfg.get('deviceInfo', " ulearning-cmd ")
             users[cfg['username']]['terminalId'] = cfg.get('terminalId', "0123456789abcdef")
 
-        # 设置活动用户
-        try:
-            users[cfg['activeUser']]
-            return setActiveUser(cfg['activeUser'])
-        except:
-            # 如果 activeUser 不存在或指向不存在的用户，则使用用户列表第一个用户
-            return setActiveUser(list(users)[0])
-    except:
+        if not users:
+            return 0
+
+        # 兼容旧配置：activeUser 带 dgut 前缀，但 users 的键只有学号。
+        active_user = cfg.get('activeUser')
+        legacy_user = active_user[4:] if isinstance(active_user, str) and active_user.startswith('dgut') else None
+        if active_user not in users and legacy_user in users:
+            users[active_user] = users.pop(legacy_user)
+            saveCfgFile(active_user)
+
+        if active_user not in users:
+            print(f'配置中的活动账号不存在：{active_user}')
+            return 0
+        return setActiveUser(active_user)
+    except FileNotFoundError:
+        return 0
+    except (OSError, json.JSONDecodeError, KeyError, TypeError) as e:
+        print(f'配置文件加载失败：{e}')
         return 0
 
 
@@ -64,22 +80,54 @@ def loadCfg():
 # 返回值：0=失败，1=成功
 def setActiveUser(username):
     global loginName, password, headers, userID, roleId, deviceInfo, terminalId
-    try:
-        # 尝试获取 users 里是否存在该用户
-        activeUser = users[username]
-        # 设置用户名密码
-        loginName = username
-        password = activeUser.get('password')
-        headers['AUTHORIZATION'] = activeUser.get('auth', '')
-        userID = activeUser.get('userID', 0)
-        roleId = activeUser.get('roleId', 0)
-        deviceInfo = activeUser.get('deviceInfo', " ulearning-cmd ")
-        terminalId = activeUser.get('terminalId', "0123456789abcdef")
-        # 加载成功，返回 1
-        return 1
-    # 加载失败，返回 0
-    except:
+    activeUser = users.get(username)
+    if not isinstance(activeUser, dict):
         return 0
+    loginName = username
+    password = activeUser.get('password', '')
+    headers['AUTHORIZATION'] = activeUser.get('auth', '')
+    userID = activeUser.get('userID', 0)
+    roleId = activeUser.get('roleId', 0)
+    deviceInfo = activeUser.get('deviceInfo', " ulearning-cmd ")
+    terminalId = activeUser.get('terminalId', "0123456789abcdef")
+    return 1
+
+
+def saveCfgFile(active_user):
+    cfg = {
+        'users': users,
+        'activeUser': active_user,
+    }
+    with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
+        json.dump(cfg, f, indent=2, ensure_ascii=False)
+
+
+def chooseUser(username=None):
+    if username:
+        if setActiveUser(username) == 1:
+            return
+        print(f'账号 {username} 尚未保存，将添加为新账号。')
+        new_login(username)
+        return
+
+    account_names = list(users)
+    print('\n已保存账号：')
+    for index, account in enumerate(account_names, 1):
+        active_mark = '（当前）' if account == loginName else ''
+        print(f'  {index}. {account}{active_mark}')
+    print('  N. 添加新账号')
+
+    while True:
+        choice = input('请选择账号（直接回车使用当前账号）：').strip()
+        if not choice:
+            return
+        if choice.lower() == 'n':
+            new_login()
+            return
+        if choice.isdigit() and 1 <= int(choice) <= len(account_names):
+            setActiveUser(account_names[int(choice) - 1])
+            return
+        print('选择无效，请输入账号序号或 N。')
 
 
 def saveCfg():
@@ -93,14 +141,7 @@ def saveCfg():
     users[loginName]['roleId'] = roleId
     users[loginName]['deviceInfo'] = deviceInfo
     users[loginName]['terminalId'] = terminalId
-    # 构建配置文件
-    cfg = {
-        'users': users,
-        'activeUser': loginName,
-    }
-    # 写入文件
-    with open('ulearning-cmd.json', 'w') as f:
-        json.dump(cfg, f, indent=2)
+    saveCfgFile(loginName)
 
 
 def new_login(username=None):
@@ -119,8 +160,7 @@ def new_login(username=None):
     deviceInfo = " ulearning-cmd "
     terminalId = "0123456789abcdef"
     # 输入密码
-    password = input('密码：')
-    login()
+    password = getpass('密码：')
 
 
 # 用户名密码登录
@@ -455,9 +495,10 @@ if __name__ == '__main__':
     print('【加载配置文件…】')
     if loadCfg() == 1:
         print('【配置文件加载成功!】')
-        login()
+        chooseUser(sys.argv[1] if len(sys.argv) > 1 else None)
     else:
-        new_login()
+        new_login(sys.argv[1] if len(sys.argv) > 1 else None)
+    login()
     print(f"已加载 {len(getCourseList()['courseList'])} 条课程")
     print('=== 初始化完成! ===\n')
     signinAllCourses()

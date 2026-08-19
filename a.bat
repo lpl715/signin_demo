@@ -1,2 +1,3 @@
 @echo off
-cmd/k python E:\qiandao\signin_demo\ulearning-cmd.py
+cd /d "%~dp0"
+cmd /k python "%~dp0ulearning-cmd.py" %*
